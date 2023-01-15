@@ -37,7 +37,9 @@ sounds = {'start': pygame.mixer.Sound(os.path.join('data', 'theme.mp3')), \
           'level': pygame.mixer.Sound(os.path.join('data', 'levelstart.mp3')), \
           'anykey': pygame.mixer.Sound(os.path.join('data', 'anykey.mp3')), \
           'fire': pygame.mixer.Sound(os.path.join('data', 'fire.mp3')), \
-          'gameover': pygame.mixer.Sound(os.path.join('data', 'gameover.mp3'))}
+          'gameover': pygame.mixer.Sound(os.path.join('data', 'gameover.mp3')), \
+          'boom': pygame.mixer.Sound(os.path.join('data', 'boom.mp3')), \
+          'newlevel': pygame.mixer.Sound(os.path.join('data', 'newlevel.mp3'))}
 
 
 def startscreen():
@@ -145,6 +147,18 @@ class Bullet:
         self.sprite.rect = self.coords
 
 
+class EnemyBullet:
+    def __init__(self, coords):
+        self.coords = coords
+        self.sprite = pygame.sprite.Sprite(all_sprites)
+        self.sprite.image = load_image('enemymissle.png')
+        self.sprite.rect = self.coords
+    
+    def move(self):
+        self.coords[1] += 20
+        self.sprite.rect = self.coords
+
+
 functions = {1: [lambda x: [x[0] + 15, x[1]], lambda x: [x[0] - 15, x[1]]], \
              2: [lambda x: [x[0] + 10, math.sin(x[0] / 100) * 100], lambda x: [x[0] - 10, -1 * math.sin(x[0] / 100) * 100], lambda x: [x[0] + 15, x[1]], lambda x: [x[0] - 15, x[1]]], \
              3: [lambda x: [x[0] + 10, x[1] + 10], lambda x: [x[0] - 10, x[1] + 10], lambda x: [x[0] + 10, x[1] - 10]]}
@@ -158,11 +172,19 @@ def generate_level():
     return enemies
 
 
+def gameover():
+    end = True
+
+
 def end_screen(score):
     screen.fill((0, 0, 0))
     font = pygame.font.Font(os.path.join('data', 'galaga_font.ttf'), 15)
     text = font.render("YOUR SCORE: {}".format(score), True, (255, 255, 255))
     text_x = width // 2 - text.get_width() // 2
+    if score > int(highscore):
+        file = open(os.path.join('data', 'highscore.txt'), 'w')
+        file.write(str(score))
+        file.close()
     text_y = height // 2 - text.get_height() // 2 + 100
     text_w = text.get_width()
     text_h = text.get_height()
@@ -219,6 +241,15 @@ text_w = text.get_width()
 text_h = text.get_height()
 screen.blit(text, (text_x, text_y))
 # score
+score = 0
+font = pygame.font.Font(os.path.join('data', 'galaga_font.ttf'), 10)
+scoretext = font.render("SCORE: {}".format(str(score)), True, (255, 255, 255))
+scoretext_x = 0
+scoretext_y = 10
+scoretext_w = text.get_width()
+scoretext_h = text.get_height()
+screen.blit(scoretext, (scoretext_x, scoretext_y))
+# score
 boomsprites = {1: load_image('boom1.png'), \
                2: load_image('boom2.png'), \
                3: load_image('boom3.png'), \
@@ -247,12 +278,14 @@ enemies = generate_level()
 all_sprites.draw(screen)
 pygame.display.flip()
 booms = []
+enemymissle = []
 running = True
 right = False
 left = False
 end = False
 clock = pygame.time.Clock()
 animated = 0
+levelend = 0
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -272,8 +305,33 @@ while running:
             if event.key == pygame.K_RIGHT:
                 right = False
     if end:
-        end_screen(50)
+        end_screen(score)
+        score = 0
+        for i in booms:
+            i.sprite.kill()
+        booms = []
+        for i in enemymissle:
+            i.sprite.kill()
+        for i in enemymissle:
+            i.sprite.kill()
+        enemymissle = []
+        for i in missle:
+            i.sprite.kill()
+        missle = []
+        for i in enemies:
+            i.sprite.kill()
+        enemies = generate_level()
         end = False
+        file = open(os.path.join('data', 'highscore.txt'))
+        highscore = file.readline()
+        file.close()
+        font = pygame.font.Font(os.path.join('data', 'galaga_font.ttf'), 10)
+        text = font.render("HIGHSCORE: {}".format(highscore), True, (255, 255, 255))
+        text_x = 0
+        text_y = 0
+        text_w = text.get_width()
+        text_h = text.get_height()
+        screen.blit(text, (text_x, text_y))
     if left and kx > 10:
         kx -= 10
     if right and kx + 70 < width:
@@ -305,8 +363,10 @@ while running:
         missle[missledel[i] - i].sprite.kill()
         del missle[missledel[i] - i]
     for i in range(len(enemiesdel)):
+        sounds['boom'].play()
         booms.append(Boom(enemies[enemiesdel[i] - i].coords))
         enemies[enemiesdel[i] - i].sprite.kill()
+        score += 150
         del enemies[enemiesdel[i] - i]
     for i in range(len(missle)):
         missle[i - k].move()
@@ -328,14 +388,50 @@ while running:
         if i.coords[0] >= width - 50:
             i.coords[0] = width - 60
             i.newfunc()
+        if i.coords[0] + 30 >= kx and i.coords[0] - 50 <= kx and i.coords[1] >= height - 110:
+            end = True
+        if i.type == 1:
+            if random.randint(1, 20) == 1:
+                enemymissle.append(EnemyBullet([i.coords[0], i.coords[1] + 50]))
+    enemymissledel = []
+    for i in range(len(enemymissle)):
+        if enemymissle[i].coords[1] >= height - 30:
+            enemymissledel.append(i)
+            continue
+        enemymissle[i].move()
+        if enemymissle[i].coords[0] + 5 >= kx and enemymissle[i].coords[0] <= kx + 50 and enemymissle[i].coords[1] >= height - 70:
+            end = True
+    for i in range(len(enemymissledel)):
+        enemymissle[enemymissledel[i] - i].sprite.kill()
+        del enemymissle[enemymissledel[i] - i]
     animated += 1
     if animated == 10:
         animated = 0
         for i in enemies:
             i.newsprite()
+    if len(enemies) == 0:
+        font2 = pygame.font.Font(os.path.join('data', 'galaga_font.ttf'), 20)
+        lvl = font2.render("NEXT LEVEL! +1000 SCORE".format(highscore), True, (255, 255, 255))
+        lvl_x = width // 2 - lvl.get_width() // 2
+        lvl_y = height // 2 - lvl.get_height() // 2 - 100
+        lvl_w = lvl.get_width()
+        lvl_h = lvl.get_height()
+        if levelend == 0:
+            sounds['newlevel'].play()
+            score += 1000
+        levelend += 1
+        if levelend == 170:
+            enemies = generate_level()
+            levelend = 0
     player.rect.topleft = (kx, ky)
+    if score > int(highscore):
+        text = font.render("HIGHSCORE: {}".format(score), True, (255, 255, 255))
+    scoretext = font.render("SCORE: {}".format(str(score)), True, (255, 255, 255))
     screen.fill(pygame.Color('black'))
+    screen.blit(scoretext, (scoretext_x, scoretext_y))
     all_sprites.draw(screen)
+    if len(enemies) == 0:
+        screen.blit(lvl, (lvl_x, lvl_y))
     screen.blit(text, (text_x, text_y))
     pygame.display.flip()
     clock.tick(30)
